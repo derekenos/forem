@@ -1,8 +1,43 @@
-FROM quay.io/forem/ruby:3.0.2 as base
+
+###############################################################################
+# Build dockerize for aarch64
+###############################################################################
+
+FROM golang:buster as dockerize
+
+ENV DOCKERIZE_VERSION=v0.6.1
+WORKDIR /go
+RUN git clone --depth 1 --branch ${DOCKERIZE_VERSION} https://github.com/jwilder/dockerize \
+    && make deps \
+    && mkdir -p dist/linux/aarch64 && GOOS=linux GOARCH=arm GOARM=5 go build -ldflags "$(LDFLAGS)" -o dist/linux/aarch64/dockerize
+
+
+###############################################################################
+# Build the base aarch64 Fedora + Ruby 3.0.2 image
+###############################################################################
+
+FROM quay.io/fedora/fedora:34-aarch64 as base
+
+# Adapted from: https://quay.io/repository/forem/ruby/manifest/sha256:94e1d7eb1043a22be24de4746eeb254c2787ad81b6c4105fe16f3222d815752f
+# Got original "FROM quay.io/fedora/fedora:*" from: https://quay.io/api/v1/repository/forem/ruby/manifest/sha256:94e1d7eb1043a22be24de4746eeb254c2787ad81b6c4105fe16f3222d815752f
+
+USER root
+
+RUN dnf upgrade -y && dnf install autoconf bison curl git gzip make patch tar wget xz file gcc-c++ bzip2-devel gdbm-devel gmp-devel glib2-devel libcurl-devel libxml2-devel libxslt-devel libffi-devel ncurses-devel openssl-devel readline-devel redhat-rpm-config --setopt install_weak_deps=false -y && dnf install ruby ruby-devel ruby-irb ruby-libs rubygems rubygems-devel -y && dnf -y clean all && rm -rf /var/cache/yum
+
+ENV BUNDLE_SILENCE_ROOT_WARNING=1
+
+ENV RUBY_MAJOR=3.0
+
+ENV RUBY_VERSION=3.0.2
 
 FROM base as builder
 
 USER root
+
+# Copy in aarch64 dockerize build
+COPY --from=dockerize /go/dockerize/dist/linux/aarch64/dockerize \
+     /usr/local/bin/dockerize
 
 RUN curl -sL https://dl.yarnpkg.com/rpm/yarn.repo -o /etc/yum.repos.d/yarn.repo && \
     dnf install --setopt install_weak_deps=false -y \
@@ -20,12 +55,6 @@ ENV APP_USER=forem APP_UID=1000 APP_GID=1000 APP_HOME=/opt/apps/forem \
 RUN mkdir -p ${APP_HOME} && chown "${APP_UID}":"${APP_GID}" "${APP_HOME}" && \
     groupadd -g "${APP_GID}" "${APP_USER}" && \
     adduser -u "${APP_UID}" -g "${APP_GID}" -d "${APP_HOME}" "${APP_USER}"
-
-ENV DOCKERIZE_VERSION=v0.6.1
-RUN wget https://github.com/jwilder/dockerize/releases/download/"${DOCKERIZE_VERSION}"/dockerize-linux-amd64-"${DOCKERIZE_VERSION}".tar.gz \
-    && tar -C /usr/local/bin -xzvf dockerize-linux-amd64-"${DOCKERIZE_VERSION}".tar.gz \
-    && rm dockerize-linux-amd64-"${DOCKERIZE_VERSION}".tar.gz \
-    && chown root:root /usr/local/bin/dockerize
 
 WORKDIR "${APP_HOME}"
 
@@ -51,6 +80,7 @@ RUN echo $(date -u +'%Y-%m-%dT%H:%M:%SZ') >> "${APP_HOME}"/FOREM_BUILD_DATE && \
     rm -rf "${APP_HOME}"/.git/
 
 RUN rm -rf node_modules vendor/assets spec
+
 
 ## Production
 FROM base as production
