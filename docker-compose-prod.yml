@@ -1,0 +1,88 @@
+version: "3"
+services:
+  rails:
+    image: quay.io/forem/forem:development
+    container_name: forem_rails
+    user: root
+    ports:
+      - "80:80"
+    depends_on:
+      - bundle
+      - db
+      - redis
+      - yarn
+    env_file:
+      - .env
+    volumes:
+      - .:/opt/apps/forem:delegated
+    entrypoint: ["dockerize", "-wait", "tcp://db:5432", "-wait", "tcp://redis:6379", "-wait", "file:///opt/apps/forem/vendor/bundle/.bundle_finished", "-timeout", "2700s", "-wait-retry-interval", "10s"]
+    command: [ "bash", "-c", "./scripts/entrypoint.sh bootstrap && bundle exec rails server -b 0.0.0.0 -p 80"]
+
+  bundle:
+    image: quay.io/forem/forem:development
+    container_name: forem_bundle
+    user: root
+    env_file:
+      - .env
+    volumes:
+      - .:/opt/apps/forem:delegated
+    command: ["./scripts/bundle.sh"]
+
+  yarn:
+    image: quay.io/forem/forem:development
+    container_name: forem_yarn
+    user: root
+    env_file:
+      - .env
+    volumes:
+      - .:/opt/apps/forem:delegated
+    command: yarn install --dev
+
+  webpacker:
+    image: quay.io/forem/forem:development
+    container_name: forem_webpacker
+    user: root
+    depends_on:
+      - bundle
+      - rails
+      - yarn
+    env_file:
+      - .env
+    volumes:
+      - .:/opt/apps/forem:delegated
+    entrypoint: ["dockerize", "-wait", "file:///opt/apps/forem/node_modules/.bin/webpack", "-wait", "file:///opt/apps/forem/vendor/bundle/.bundle_finished", "-timeout", "2700s", "-wait-retry-interval", "10s"]
+    command: ["./bin/webpack", "--mode=production"]
+
+  sidekiq:
+    image: quay.io/forem/forem:development
+    container_name: forem_sidekiq
+    user: root
+    depends_on:
+      - rails
+      - redis
+      - db
+    env_file:
+      - .env
+    volumes:
+      - .:/opt/apps/forem:delegated
+    entrypoint: ["dockerize", "-wait", "tcp://db:5432", "-wait", "tcp://redis:6379", "-wait", "tcp://rails:80", "-timeout", "2700s", "-wait-retry-interval", "20s"]
+    command: ["bundle", "exec", "sidekiq","-c","2"]
+
+  db:
+    image: postgres:11-alpine
+    container_name: forem_postgresql
+    env_file:
+      - .env
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data:delegated
+
+  redis:
+    image: redis:6.0.9-alpine
+    container_name: forem_redis
+    ports:
+      - "6379:6379"
+
+volumes:
+  db_data:
