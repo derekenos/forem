@@ -23,6 +23,7 @@ services:
       RACK_TIMEOUT_SERVICE_TIMEOUT: 10000
       STATEMENT_TIMEOUT: 10000
       APP_DOMAIN: localhost:3000
+      APP_PROTOCOL: http://
     tmpfs:
       - /tmp
     volumes:
