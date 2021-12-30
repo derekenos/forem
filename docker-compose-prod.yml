@@ -36,7 +36,7 @@ services:
       - .env
     volumes:
       - .:/opt/apps/forem:delegated
-    command: yarn install --dev
+    command: yarn install
 
   webpacker:
     image: quay.io/forem/forem:development
